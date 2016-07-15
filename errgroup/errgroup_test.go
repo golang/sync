@@ -43,7 +43,7 @@ func ExampleGroup_justErrors() {
 	for _, url := range urls {
 		// Launch a goroutine to fetch the URL.
 		url := url // https://golang.org/doc/faq#closures_and_goroutines
-		g.Go(func(url string) error {
+		g.Go(func() error {
 			// Fetch the URL.
 			resp, err := http.Get(url)
 			if err == nil {
@@ -53,7 +53,7 @@ func ExampleGroup_justErrors() {
 		})
 	}
 	// Wait for all HTTP fetches to complete.
-	if err := wg.Wait(); err == nil {
+	if err := g.Wait(); err == nil {
 		fmt.Println("Successfully fetched all URLs.")
 	}
 }
