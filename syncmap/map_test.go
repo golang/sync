@@ -5,20 +5,48 @@
 package syncmap_test
 
 import (
-	"fmt"
 	"math/rand"
 	"reflect"
+	"runtime"
+	"sync"
 	"testing"
 	"testing/quick"
 
 	"golang.org/x/sync/syncmap"
 )
 
+type mapOp string
+
+const (
+	opLoad        = mapOp("Load")
+	opStore       = mapOp("Store")
+	opLoadOrStore = mapOp("LoadOrStore")
+	opDelete      = mapOp("Delete")
+)
+
+var mapOps = [...]mapOp{opLoad, opStore, opLoadOrStore, opDelete}
+
 // mapCall is a quick.Generator for calls on mapInterface.
 type mapCall struct {
-	key   interface{}
-	apply func(mapInterface) (interface{}, bool)
-	desc  string
+	op   mapOp
+	k, v interface{}
+}
+
+func (c mapCall) apply(m mapInterface) (interface{}, bool) {
+	switch c.op {
+	case opLoad:
+		return m.Load(c.k)
+	case opStore:
+		m.Store(c.k, c.v)
+		return nil, false
+	case opLoadOrStore:
+		return m.LoadOrStore(c.k, c.v)
+	case opDelete:
+		m.Delete(c.k)
+		return nil, false
+	default:
+		panic("invalid mapOp")
+	}
 }
 
 type mapResult struct {
@@ -26,54 +54,21 @@ type mapResult struct {
 	ok    bool
 }
 
-var stringType = reflect.TypeOf("")
-
 func randValue(r *rand.Rand) interface{} {
-	k, ok := quick.Value(stringType, r)
-	if !ok {
-		panic(fmt.Sprintf("quick.Value(%v, _) failed", stringType))
+	b := make([]byte, r.Intn(4))
+	for i := range b {
+		b[i] = 'a' + byte(rand.Intn(26))
 	}
-	return k.Interface()
+	return string(b)
 }
 
 func (mapCall) Generate(r *rand.Rand, size int) reflect.Value {
-	k := randValue(r)
-
-	var (
-		app  func(mapInterface) (interface{}, bool)
-		desc string
-	)
-	switch rand.Intn(4) {
-	case 0:
-		app = func(m mapInterface) (interface{}, bool) {
-			return m.Load(k)
-		}
-		desc = fmt.Sprintf("Load(%q)", k)
-
-	case 1:
-		v := randValue(r)
-		app = func(m mapInterface) (interface{}, bool) {
-			m.Store(k, v)
-			return nil, false
-		}
-		desc = fmt.Sprintf("Store(%q, %q)", k, v)
-
-	case 2:
-		v := randValue(r)
-		app = func(m mapInterface) (interface{}, bool) {
-			return m.LoadOrStore(k, v)
-		}
-		desc = fmt.Sprintf("LoadOrStore(%q, %q)", k, v)
-
-	case 3:
-		app = func(m mapInterface) (interface{}, bool) {
-			m.Delete(k)
-			return nil, false
-		}
-		desc = fmt.Sprintf("Delete(%q)", k)
+	c := mapCall{op: mapOps[rand.Intn(len(mapOps))], k: randValue(r)}
+	switch c.op {
+	case opStore, opLoadOrStore:
+		c.v = randValue(r)
 	}
-
-	return reflect.ValueOf(mapCall{k, app, desc})
+	return reflect.ValueOf(c)
 }
 
 func applyCalls(m mapInterface, calls []mapCall) (results []mapResult, final map[interface{}]interface{}) {
@@ -112,5 +107,66 @@ func TestMapMatchesRWMutex(t *testing.T) {
 func TestMapMatchesDeepCopy(t *testing.T) {
 	if err := quick.CheckEqual(applyMap, applyRWMutexMap, nil); err != nil {
 		t.Error(err)
+	}
+}
+
+func TestConcurrentRange(t *testing.T) {
+	const mapSize = 1 << 10
+
+	m := new(syncmap.Map)
+	for n := int64(1); n <= mapSize; n++ {
+		m.Store(n, int64(n))
+	}
+
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	defer func() {
+		close(done)
+		wg.Wait()
+	}()
+	for g := int64(runtime.GOMAXPROCS(0)); g > 0; g-- {
+		r := rand.New(rand.NewSource(g))
+		wg.Add(1)
+		go func(g int64) {
+			defer wg.Done()
+			for i := int64(0); ; i++ {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				for n := int64(1); n < mapSize; n++ {
+					if r.Int63n(mapSize) == 0 {
+						m.Store(n, n*i*g)
+					} else {
+						m.Load(n)
+					}
+				}
+			}
+		}(g)
+	}
+
+	iters := 1 << 10
+	if testing.Short() {
+		iters = 16
+	}
+	for n := iters; n > 0; n-- {
+		seen := make(map[int64]bool, mapSize)
+
+		m.Range(func(ki, vi interface{}) bool {
+			k, v := ki.(int64), vi.(int64)
+			if v%k != 0 {
+				t.Fatalf("while Storing multiples of %v, Range saw value %v", k, v)
+			}
+			if seen[k] {
+				t.Fatalf("Range visited key %v twice", k)
+			}
+			seen[k] = true
+			return true
+		})
+
+		if len(seen) != mapSize {
+			t.Fatalf("Range visited %v elements of %v-element Map", len(seen), mapSize)
+		}
 	}
 }
