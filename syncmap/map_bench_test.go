@@ -145,8 +145,27 @@ func BenchmarkLoadOrStoreCollision(b *testing.B) {
 	})
 }
 
+func BenchmarkRange(b *testing.B) {
+	const mapSize = 1 << 10
+
+	benchMap(b, bench{
+		setup: func(_ *testing.B, m mapInterface) {
+			for i := 0; i < mapSize; i++ {
+				m.Store(i, i)
+			}
+		},
+
+		perG: func(b *testing.B, pb *testing.PB, i int, m mapInterface) {
+			for ; pb.Next(); i++ {
+				m.Range(func(_, _ interface{}) bool { return true })
+			}
+		},
+	})
+}
+
 // BenchmarkAdversarialAlloc tests performance when we store a new value
-// immediately whenever the map is promoted to clean.
+// immediately whenever the map is promoted to clean and otherwise load a
+// unique, missing key.
 //
 // This forces the Load calls to always acquire the map's mutex.
 func BenchmarkAdversarialAlloc(b *testing.B) {
@@ -165,8 +184,8 @@ func BenchmarkAdversarialAlloc(b *testing.B) {
 	})
 }
 
-// BenchmarkAdversarialDelete tests performance when we delete and restore a
-// value immediately after a large map has been promoted.
+// BenchmarkAdversarialDelete tests performance when we periodically delete
+// one key and add a different one in a large map.
 //
 // This forces the Load calls to always acquire the map's mutex and periodically
 // makes a full copy of the map despite changing only one entry.
@@ -191,7 +210,7 @@ func BenchmarkAdversarialDelete(b *testing.B) {
 						return false
 					})
 					m.Delete(key)
-					m.Store(key, key)
+					m.Store(i, i)
 				}
 			}
 		},
