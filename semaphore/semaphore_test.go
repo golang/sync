@@ -29,6 +29,7 @@ func TestWeighted(t *testing.T) {
 	t.Parallel()
 
 	n := runtime.GOMAXPROCS(0)
+	loops := 10000 / n
 	sem := NewWeighted(int64(n))
 	var wg sync.WaitGroup
 	wg.Add(n)
@@ -36,7 +37,7 @@ func TestWeighted(t *testing.T) {
 		i := i
 		go func() {
 			defer wg.Done()
-			HammerWeighted(sem, int64(i), 1000)
+			HammerWeighted(sem, int64(i), loops)
 		}()
 	}
 	wg.Wait()
