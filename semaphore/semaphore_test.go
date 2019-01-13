@@ -169,3 +169,135 @@ func TestLargeAcquireDoesntStarve(t *testing.T) {
 	sem.Release(n)
 	wg.Wait()
 }
+
+func TestWeightedResizePanic(t *testing.T) {
+	t.Parallel()
+	defer func() {
+		if recover() == nil {
+			t.Fatal("release of an unacquired weighted semaphore did not panic")
+		}
+	}()
+	w := semaphore.NewWeighted(1)
+	w.Resize(-1)
+}
+
+func TestWeightedResize(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	sem := semaphore.NewWeighted(3)
+	tryAcquire := func(n int64) bool {
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
+		defer cancel()
+		return sem.Acquire(ctx, n) == nil
+	}
+
+	tries := []bool{}
+
+	tries = append(tries, tryAcquire(1)) // true;  cur/size = 1/3
+	tries = append(tries, tryAcquire(1)) // true;  cur/size = 2/3
+	tries = append(tries, tryAcquire(1)) // true;  cur/size = 3/3
+	tries = append(tries, tryAcquire(1)) // false; cur/size = 3/3 - full!
+
+	sem.Resize(2) // cur/size = 3/2
+
+	tries = append(tries, tryAcquire(1)) // false; cur/size = 3/3 - full!
+
+	sem.Release(1) // cur/size = 2/2
+
+	tries = append(tries, tryAcquire(1)) // false; cur/size = 2/2 - full!
+
+	sem.Release(1) // cur/size = 1/2
+
+	tries = append(tries, tryAcquire(1)) // true;  cur/size = 2/2
+
+	tries = append(tries, tryAcquire(1)) // false; cur/size = 2/2 - full!
+
+	sem.Resize(3) // cur/size = 2/3
+
+	tries = append(tries, tryAcquire(1)) // true;  cur/size = 3/3
+
+	tries = append(tries, tryAcquire(1)) // false; cur/size = 3/3 - full!
+
+	want := []bool{true, true, true, false, false, false, true, false, true, false}
+	for i := range tries {
+		if tries[i] != want[i] {
+			t.Errorf("tries[%d]: got %t, want %t", i, tries[i], want[i])
+		}
+	}
+}
+
+// TestWeightedResizeUnblockImpossible will fail if an acquire that was blocking because of an impossible weight was
+// still blocking after resize to bigger size OR if an acquire that was possible but isn't possible after resize is
+// blocking because it is still in waiters list.
+// Merely returning from the test function indicates success.
+func TestWeightedResizeUnblockImpossible(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	sem := semaphore.NewWeighted(3)
+
+	acquire := func(n int64, syncChan chan struct{}) chan struct{} {
+		signal := make(chan struct{})
+		go func() {
+			syncChan <- struct{}{}
+			sem.Acquire(ctx, n)
+			defer sem.Release(n)
+			signal <- struct{}{}
+			close(signal)
+		}()
+		return signal
+	}
+
+	// Use this syncChan to make sure acquire()  get blocked in sequence (to have internal linked-list in desired state)
+	syncChan := make(chan struct{})
+
+	doneAcquire5 := acquire(5, syncChan)
+	<-syncChan
+	doneAcquire4 := acquire(4, syncChan)
+	<-syncChan
+
+	select {
+	case <-doneAcquire5:
+		t.Errorf("An Impossible acquire was aqcuired")
+	case <-doneAcquire4:
+		t.Errorf("An Impossible acquire was aqcuired")
+	default:
+
+	}
+
+	sem.Resize(4)
+
+	select {
+	case <-doneAcquire5:
+		t.Errorf("An Impossible acquire was aqcuired")
+	case <-doneAcquire4:
+
+	}
+
+	sem.Resize(5)
+
+	select {
+	case <-doneAcquire5:
+
+	}
+
+	sem.Acquire(ctx, 1)
+
+	// Test down-sizing the semaphore with to-be-impossible waiters in waiting.
+	syncChan = make(chan struct{})
+	doneAcquire5 = acquire(5, syncChan)
+	<-syncChan
+	doneAcquire4 = acquire(4, syncChan)
+	<-syncChan
+
+	sem.Resize(4)
+
+	sem.Release(1)
+
+	select {
+	case <-doneAcquire5:
+		t.Errorf("An Impossible acquire was aqcuired")
+	case <-doneAcquire4:
+
+	}
+
+}
