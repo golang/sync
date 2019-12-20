@@ -47,9 +47,8 @@ func (s *Weighted) Acquire(ctx context.Context, n int64) error {
 
 	if n > s.size {
 		// Don't make other Acquire calls block on one that's doomed to fail.
-		s.mu.Unlock()
-		<-ctx.Done()
-		return ctx.Err()
+		s.mu.Unlock()		
+		fmt.Errorf("You are trying to acquire(%d) more that semaphore size(%d) can managed", n, s.size)
 	}
 
 	ready := make(chan struct{})
