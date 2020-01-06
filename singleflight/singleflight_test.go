@@ -15,7 +15,7 @@ import (
 
 func TestDo(t *testing.T) {
 	var g Group
-	v, err, _ := g.Do("key", func() (interface{}, error) {
+	v, err, shared := g.Do("key", func() (interface{}, error) {
 		return "bar", nil
 	})
 	if got, want := fmt.Sprintf("%v (%T)", v, v), "bar (string)"; got != want {
@@ -23,6 +23,12 @@ func TestDo(t *testing.T) {
 	}
 	if err != nil {
 		t.Errorf("Do error = %v", err)
+	}
+	if shared.Decrement() != 0 {
+		t.Errorf("ref counter is expected to be 0")
+	}
+	if shared.Shared() {
+		t.Errorf("Do returned shared")
 	}
 }
 
