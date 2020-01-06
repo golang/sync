@@ -6,8 +6,10 @@
 // mechanism.
 package singleflight // import "golang.org/x/sync/singleflight"
 
-import "sync"
-import "sync/atomic"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 // call is an in-flight or completed singleflight.Do call
 type call struct {
@@ -44,7 +46,7 @@ type Result struct {
 	Shared RefShared
 }
 
-// this encapsulates both "shared boolean" as well as actual reference counter
+// RefShared struct encapsulates both "shared boolean" as well as actual reference counter
 // callers can call RefShared.Decrement to determine when last caller is done using result, so cleanup if needed can be performed
 type RefShared struct {
 	shared   bool
@@ -105,7 +107,6 @@ func (g *Group) doCall(c *call, key string, fn func() (interface{}, error)) {
 	if !c.forgotten {
 		delete(g.m, key)
 	}
-	//shared := newRefShared(&c.refCount)
 	shared := RefShared{shared: c.refCount > 1, refCount: &c.refCount}
 	for _, ch := range c.chans {
 		ch <- Result{c.val, c.err, shared}
