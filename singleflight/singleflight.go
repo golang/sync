@@ -24,8 +24,8 @@ type call struct {
 	// These fields are read and written with the singleflight
 	// mutex held before the WaitGroup is done, and are read but
 	// not written after the WaitGroup is done.
-	dups  int
-	chans []chan<- Result
+	refCount int64
+	chans    []chan<- Result
 }
 
 // Group represents a class of work and forms a namespace in
@@ -62,12 +62,12 @@ func (g *Group) DoChan(key string, fn func() (interface{}, error)) <-chan Result
 		g.m = make(map[string]*call)
 	}
 	if c, ok := g.m[key]; ok {
-		c.dups++
+		c.refCount++
 		c.chans = append(c.chans, ch)
 		g.mu.Unlock()
 		return ch
 	}
-	c := &call{chans: []chan<- Result{ch}}
+	c := &call{refCount: 1, chans: []chan<- Result{ch}}
 	c.wg.Add(1)
 	g.m[key] = c
 	g.mu.Unlock()
@@ -87,7 +87,7 @@ func (g *Group) doCall(c *call, key string, fn func() (interface{}, error)) {
 		delete(g.m, key)
 	}
 	for _, ch := range c.chans {
-		ch <- Result{c.val, c.err, c.dups > 0}
+		ch <- Result{c.val, c.err, c.refCount > 1}
 	}
 	g.mu.Unlock()
 }
