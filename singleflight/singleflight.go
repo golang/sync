@@ -41,22 +41,24 @@ type Group struct {
 type Result struct {
 	Val    interface{}
 	Err    error
-	Shared refShared
+	Shared RefShared
 }
 
 // this encapsulates both "shared boolean" as well as actual reference counter
-// callers can call refShared.Decrement to determine when last caller is done using result, so cleanup if needed can be performed
-type refShared struct {
+// callers can call RefShared.Decrement to determine when last caller is done using result, so cleanup if needed can be performed
+type RefShared struct {
 	shared   bool
 	refCount *int64
 }
 
 // Decrement will atomically decrement refcounter and will return new value
-func (rs *refShared) Decrement() int64 {
+func (rs *RefShared) Decrement() int64 {
 	return atomic.AddInt64(rs.refCount, -1)
 }
 
-func (rs *refShared) Shared() bool {
+// returns boolean indicator of whether original "ref counter" had more than 1 reference
+// it will return same value regardless of whether Decrement() method was called
+func (rs *RefShared) Shared() bool {
 	return rs.shared
 }
 
@@ -65,7 +67,7 @@ func (rs *refShared) Shared() bool {
 // time. If a duplicate comes in, the duplicate caller waits for the
 // original to complete and receives the same results.
 // The return value shared indicates whether v was given to multiple callers (and a reference counter for callers too).
-func (g *Group) Do(key string, fn func() (interface{}, error)) (v interface{}, err error, shared refShared) {
+func (g *Group) Do(key string, fn func() (interface{}, error)) (v interface{}, err error, shared RefShared) {
 	r := <-g.DoChan(key, fn)
 	return r.Val, r.Err, r.Shared
 }
@@ -104,7 +106,7 @@ func (g *Group) doCall(c *call, key string, fn func() (interface{}, error)) {
 		delete(g.m, key)
 	}
 	//shared := newRefShared(&c.refCount)
-	shared := refShared{shared: c.refCount > 1, refCount: &c.refCount}
+	shared := RefShared{shared: c.refCount > 1, refCount: &c.refCount}
 	for _, ch := range c.chans {
 		ch <- Result{c.val, c.err, shared}
 	}
