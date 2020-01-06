@@ -7,6 +7,7 @@
 package singleflight // import "golang.org/x/sync/singleflight"
 
 import "sync"
+import "sync/atomic"
 
 // call is an in-flight or completed singleflight.Do call
 type call struct {
@@ -40,15 +41,31 @@ type Group struct {
 type Result struct {
 	Val    interface{}
 	Err    error
-	Shared bool
+	Shared refShared
+}
+
+// this encapsulates both "shared boolean" as well as actual reference counter
+// callers can call refShared.Decrement to determine when last caller is done using result, so cleanup if needed can be performed
+type refShared struct {
+	shared   bool
+	refCount *int64
+}
+
+// Decrement will atomically decrement refcounter and will return new value
+func (rs *refShared) Decrement() int64 {
+	return atomic.AddInt64(rs.refCount, -1)
+}
+
+func (rs *refShared) Shared() bool {
+	return rs.shared
 }
 
 // Do executes and returns the results of the given function, making
 // sure that only one execution is in-flight for a given key at a
 // time. If a duplicate comes in, the duplicate caller waits for the
 // original to complete and receives the same results.
-// The return value shared indicates whether v was given to multiple callers.
-func (g *Group) Do(key string, fn func() (interface{}, error)) (v interface{}, err error, shared bool) {
+// The return value shared indicates whether v was given to multiple callers (and a reference counter for callers too).
+func (g *Group) Do(key string, fn func() (interface{}, error)) (v interface{}, err error, shared refShared) {
 	r := <-g.DoChan(key, fn)
 	return r.Val, r.Err, r.Shared
 }
@@ -86,8 +103,10 @@ func (g *Group) doCall(c *call, key string, fn func() (interface{}, error)) {
 	if !c.forgotten {
 		delete(g.m, key)
 	}
+	//shared := newRefShared(&c.refCount)
+	shared := refShared{shared: c.refCount > 1, refCount: &c.refCount}
 	for _, ch := range c.chans {
-		ch <- Result{c.val, c.err, c.refCount > 1}
+		ch <- Result{c.val, c.err, shared}
 	}
 	g.mu.Unlock()
 }
