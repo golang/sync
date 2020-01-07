@@ -24,7 +24,7 @@ type call struct {
 	// These fields are read and written with the singleflight
 	// mutex held before the WaitGroup is done, and are read but
 	// not written after the WaitGroup is done.
-	dups  int
+	dups  int64
 	chans []chan<- Result
 }
 
