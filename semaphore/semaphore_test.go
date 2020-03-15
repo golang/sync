@@ -170,6 +170,7 @@ func TestLargeAcquireDoesntStarve(t *testing.T) {
 	wg.Wait()
 }
 
+// translated from https://github.com/zhiqiangxu/util/blob/master/mutex/crwmutex_test.go#L43
 func TestAllocCancelDoesntStarve(t *testing.T) {
 	sem := semaphore.NewWeighted(10)
 
@@ -194,7 +195,6 @@ func TestAllocCancelDoesntStarve(t *testing.T) {
 	go func() {
 		// try to grab a read lock, it will be queued after the Lock request
 		// but should be notified when the Lock request is canceled
-		// this doesn't happen because there's a bug in semaphore
 		err := sem.Acquire(context.Background(), 1)
 		if err != nil {
 			t.FailNow()
@@ -203,7 +203,7 @@ func TestAllocCancelDoesntStarve(t *testing.T) {
 		close(doneCh)
 	}()
 
-	// because of the bug in semaphore, doneCh is never closed
+	// doneCh should be closed if the above RLock succeeded
 	select {
 	case <-doneCh:
 	case <-time.After(time.Second):
