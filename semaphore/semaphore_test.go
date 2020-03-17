@@ -169,3 +169,34 @@ func TestLargeAcquireDoesntStarve(t *testing.T) {
 	sem.Release(n)
 	wg.Wait()
 }
+
+// translated from https://github.com/zhiqiangxu/util/blob/master/mutex/crwmutex_test.go#L43
+func TestAllocCancelDoesntStarve(t *testing.T) {
+	sem := semaphore.NewWeighted(10)
+
+	// Block off a portion of the semaphore so that Acquire(_, 10) can eventually succeed.
+	sem.Acquire(context.Background(), 1)
+
+	// In the background, Acquire(_, 10).
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		sem.Acquire(ctx, 10)
+	}()
+
+	// Wait until the Acquire(_, 10) call blocks.
+	for sem.TryAcquire(1) {
+		sem.Release(1)
+		runtime.Gosched()
+	}
+
+	// Now try to grab a read lock, and simultaneously unblock the Acquire(_, 10) call.
+	// Both Acquire calls should unblock and return, in either order.
+	go cancel()
+
+	err := sem.Acquire(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("Acquire(_, 1) failed unexpectedly: %v", err)
+	}
+	sem.Release(1)
+}
