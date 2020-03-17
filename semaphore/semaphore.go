@@ -69,6 +69,7 @@ func (s *Weighted) Acquire(ctx context.Context, n int64) error {
 		default:
 			isFront := s.waiters.Front() == elem
 			s.waiters.Remove(elem)
+			// If we're at the front and there're extra tokens left, notify other waiters.
 			if isFront && s.size > s.cur {
 				s.notifyWaiters()
 			}

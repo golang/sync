@@ -174,39 +174,29 @@ func TestLargeAcquireDoesntStarve(t *testing.T) {
 func TestAllocCancelDoesntStarve(t *testing.T) {
 	sem := semaphore.NewWeighted(10)
 
-	// hold 1 read lock
+	// Block off a portion of the semaphore so that Acquire(_, 10) can eventually succeed.
 	sem.Acquire(context.Background(), 1)
 
+	// In the background, Acquire(_, 10).
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	go func() {
-		ctx, cancelFunc := context.WithTimeout(context.Background(), time.Millisecond*300)
-		defer cancelFunc()
-		// start a write lock request that will giveup after 300ms
-		err := sem.Acquire(ctx, 10)
-		if err == nil {
-			t.FailNow()
-		}
+		sem.Acquire(ctx, 10)
 	}()
 
-	// sleep 100ms, long enough for the Lock request to be queued
-	time.Sleep(time.Millisecond * 100)
-
-	// this channel will be closed if the following RLock succeeded
-	doneCh := make(chan struct{})
-	go func() {
-		// try to grab a read lock, it will be queued after the Lock request
-		// but should be notified when the Lock request is canceled
-		err := sem.Acquire(context.Background(), 1)
-		if err != nil {
-			t.FailNow()
-		}
+	// Wait until the Acquire(_, 10) call blocks.
+	for sem.TryAcquire(1) {
 		sem.Release(1)
-		close(doneCh)
-	}()
-
-	// doneCh should be closed if the above RLock succeeded
-	select {
-	case <-doneCh:
-	case <-time.After(time.Second):
-		t.FailNow()
+		runtime.Gosched()
 	}
+
+	// Now try to grab a read lock, and simultaneously unblock the Acquire(_, 10) call.
+	// Both Acquire calls should unblock and return, in either order.
+	go cancel()
+
+	err := sem.Acquire(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("Acquire(_, 1) failed unexpectedly: %v", err)
+	}
+	sem.Release(1)
 }
