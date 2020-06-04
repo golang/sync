@@ -34,7 +34,7 @@ func fakeSearch(kind string) Search {
 // simplify goroutine counting and error handling. This example is derived from
 // the sync.WaitGroup example at https://golang.org/pkg/sync/#example_WaitGroup.
 func ExampleGroup_justErrors() {
-	var g errgroup.Group
+	g := new(errgroup.Group)
 	var urls = []string{
 		"http://www.golang.org/",
 		"http://www.google.com/",
@@ -114,7 +114,7 @@ func TestZeroGroup(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		var g errgroup.Group
+		g := new(errgroup.Group)
 
 		var firstErr error
 		for i, err := range tc.errs {
