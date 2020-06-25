@@ -7,11 +7,129 @@ package singleflight
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func testConcurrentHelper(t *testing.T, inGoroutine func(routineIndex, goroutineCount int)) {
+	var wg, wgGoroutines sync.WaitGroup
+	const callers = 4
+	//ref := make([]RefCounter, callers)
+	wgGoroutines.Add(callers)
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+
+			wgGoroutines.Done()
+			wgGoroutines.Wait() // ensure that all goroutines started and reached this point
+
+			inGoroutine(i, callers)
+		}(i)
+	}
+	wg.Wait()
+
+}
+
+func TestUse(t *testing.T) {
+	var g Group
+	var newCount, handleCount, disposeCount int64
+
+	testConcurrentHelper(
+		t,
+		func(index, goroutineCount int) {
+			g.Use(
+				"key",
+				// 'new' is a slow function that creates a temp resource
+				func() (interface{}, error) {
+					time.Sleep(200 * time.Millisecond) // let more goroutines enter Do
+					atomic.AddInt64(&newCount, 1)
+					return "bar", nil
+				},
+				// 'fn' to be called by each goroutine
+				func(s interface{}, e error) error {
+					// handle s
+					if newCount != 1 {
+						t.Errorf("goroutine %v: newCount(%v) expected to be set prior to this function getting called", index, newCount)
+					}
+					atomic.AddInt64(&handleCount, 1)
+					if disposeCount > 0 {
+						t.Errorf("goroutine %v: disposeCount(%v) should not be incremented until all fn are completed", index, disposeCount)
+					}
+					return e
+				},
+				// 'dispose' - to be called once at the end
+				func(s interface{}) {
+					// cleaning up "bar"
+					atomic.AddInt64(&disposeCount, 1)
+					if handleCount != int64(goroutineCount) {
+						t.Errorf("dispose is expected to be called when all %v fn been completed, but %v have been completed instead", goroutineCount, handleCount)
+					}
+				},
+			)
+		},
+	)
+
+	if newCount != 1 {
+		t.Errorf("new expected to be called exactly once, was called %v", newCount)
+	}
+	if disposeCount != 1 {
+		t.Errorf("dispose expected to be called exactly once, was called %v", disposeCount)
+	}
+}
+
+func TestUseWithResource(t *testing.T) {
+	// use this "global" var for checkes after that testConcurrentHelper call
+	var tempFileName string
+
+	var g Group
+	testConcurrentHelper(
+		t,
+		func(_, _ int) {
+			g.Use(
+				"key",
+				// 'new' is a slow function that creates a temp resource
+				func() (interface{}, error) {
+					time.Sleep(200 * time.Millisecond) // let more goroutines enter Do
+					f, e := ioutil.TempFile("", "pat")
+					if e != nil {
+						return nil, e
+					}
+					defer f.Close()
+					tempFileName = f.Name()
+
+					// fill temp file with sequence of n.Write(...) calls
+
+					return f.Name(), e
+				},
+				// 'fn' to be called by each goroutine
+				func(s interface{}, e error) error {
+					// handle s
+					if e != nil {
+						// send alternative payload
+					}
+					if e == nil {
+						/*tempFileName*/ _ = s.(string)
+						// send Content of tempFileName to HTTPWriter
+					}
+					return e
+				},
+				// 'dispose' - to be called once at the end
+				func(s interface{}) {
+					// cleaning up "bar"
+					os.Remove(s.(string))
+				},
+			)
+		},
+	)
+	if _, e := os.Stat(tempFileName); !os.IsNotExist(e) {
+		t.Errorf("test has created a temp file '%v', but failed to cleaned it", tempFileName)
+	}
+}
 
 func TestDo(t *testing.T) {
 	var g Group

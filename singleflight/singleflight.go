@@ -6,7 +6,10 @@
 // mechanism.
 package singleflight // import "golang.org/x/sync/singleflight"
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 // call is an in-flight or completed singleflight.Do call
 type call struct {
@@ -24,7 +27,7 @@ type call struct {
 	// These fields are read and written with the singleflight
 	// mutex held before the WaitGroup is done, and are read but
 	// not written after the WaitGroup is done.
-	dups  int
+	dups  int64
 	chans []chan<- Result
 }
 
@@ -49,6 +52,39 @@ type Result struct {
 // original to complete and receives the same results.
 // The return value shared indicates whether v was given to multiple callers.
 func (g *Group) Do(key string, fn func() (interface{}, error)) (v interface{}, err error, shared bool) {
+	c := g.doNoChan(key, fn)
+	return c.val, c.err, c.dups > 0
+}
+
+// 'Use' calls 'new' at most once at a time, then invokes 'fn' with the resulting values.
+// The 'dispose' argument invokes after the last call to fn has returned.
+//
+// `Use` is designed for scenario when 'new' generates a temporary resource, which has to be cleaned up after last 'fn' is done using it
+//  Notes:
+//   'dispose' is called at most once, after last fn been completed. 'dispose' will NOT get called if/when 'new' returns an error
+//   'fn' is called on each goroutine with values returned by 'new', regardless of whether or not 'new' returned an error
+//   results of 'new' are passed to 'fn'.
+//
+// Return: 'Use' propagates return value from 'fn'
+func (g *Group) Use(
+	key string,
+	new func() (interface{}, error),
+	fn func(interface{}, error) error,
+	dispose func(interface{}),
+) error {
+	c := g.doNoChan(key, new)
+	if c.err == nil && dispose != nil {
+		defer func() {
+			if atomic.AddInt64(&c.dups, -1) == -1 {
+				dispose(c.val)
+			}
+		}()
+	}
+
+	return fn(c.val, c.err)
+}
+
+func (g *Group) doNoChan(key string, fn func() (interface{}, error)) *call {
 	g.mu.Lock()
 	if g.m == nil {
 		g.m = make(map[string]*call)
@@ -57,7 +93,7 @@ func (g *Group) Do(key string, fn func() (interface{}, error)) (v interface{}, e
 		c.dups++
 		g.mu.Unlock()
 		c.wg.Wait()
-		return c.val, c.err, true
+		return c
 	}
 	c := new(call)
 	c.wg.Add(1)
@@ -65,7 +101,7 @@ func (g *Group) Do(key string, fn func() (interface{}, error)) (v interface{}, e
 	g.mu.Unlock()
 
 	g.doCall(c, key, fn)
-	return c.val, c.err, c.dups > 0
+	return c
 }
 
 // DoChan is like Do but returns a channel that will receive the
