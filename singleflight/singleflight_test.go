@@ -253,6 +253,10 @@ func TestGoexitDo(t *testing.T) {
 }
 
 func TestPanicDoChan(t *testing.T) {
+	if runtime.GOOS == "js" {
+		t.Skipf("js does not support exec")
+	}
+
 	if os.Getenv("TEST_PANIC_DOCHAN") != "" {
 		defer func() {
 			recover()
@@ -291,6 +295,10 @@ func TestPanicDoChan(t *testing.T) {
 }
 
 func TestPanicDoSharedByDoChan(t *testing.T) {
+	if runtime.GOOS == "js" {
+		t.Skipf("js does not support exec")
+	}
+
 	if os.Getenv("TEST_PANIC_DOCHAN") != "" {
 		blocked := make(chan struct{})
 		unblock := make(chan struct{})
