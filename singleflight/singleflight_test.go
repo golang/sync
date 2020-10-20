@@ -97,70 +97,41 @@ func TestDoDupSuppress(t *testing.T) {
 func TestForget(t *testing.T) {
 	var g Group
 
-	var firstStarted, firstFinished sync.WaitGroup
+	var (
+		firstStarted  = make(chan struct{})
+		unblockFirst  = make(chan struct{})
+		firstFinished = make(chan struct{})
+	)
 
-	firstStarted.Add(1)
-	firstFinished.Add(1)
-
-	firstCh := make(chan struct{})
 	go func() {
 		g.Do("key", func() (i interface{}, e error) {
-			firstStarted.Done()
-			<-firstCh
-			firstFinished.Done()
+			close(firstStarted)
+			<-unblockFirst
+			close(firstFinished)
 			return
 		})
 	}()
+	<-firstStarted
+	g.Forget("key")
 
-	firstStarted.Wait()
-	g.Forget("key") // from this point no two function using same key should be executed concurrently
+	unblockSecond := make(chan struct{})
+	secondResult := g.DoChan("key", func() (i interface{}, e error) {
+		<-unblockSecond
+		return 2, nil
+	})
 
-	var secondStarted int32
-	var secondFinished int32
-	var thirdStarted int32
+	close(unblockFirst)
+	<-firstFinished
 
-	secondCh := make(chan struct{})
-	secondRunning := make(chan struct{})
-	go func() {
-		g.Do("key", func() (i interface{}, e error) {
-			defer func() {
-			}()
-			atomic.AddInt32(&secondStarted, 1)
-			// Notify that we started
-			secondCh <- struct{}{}
-			// Wait other get above signal
-			<-secondRunning
-			<-secondCh
-			atomic.AddInt32(&secondFinished, 1)
-			return 2, nil
-		})
-	}()
-
-	close(firstCh)
-	firstFinished.Wait() // wait for first execution (which should not affect execution after Forget)
-
-	<-secondCh
-	// Notify second that we got the signal that it started
-	secondRunning <- struct{}{}
-	if atomic.LoadInt32(&secondStarted) != 1 {
-		t.Fatal("Second execution should be executed due to usage of forget")
-	}
-
-	if atomic.LoadInt32(&secondFinished) == 1 {
-		t.Fatal("Second execution should be still active")
-	}
-
-	close(secondCh)
-	result, _, _ := g.Do("key", func() (i interface{}, e error) {
-		atomic.AddInt32(&thirdStarted, 1)
+	thirdResult := g.DoChan("key", func() (i interface{}, e error) {
 		return 3, nil
 	})
 
-	if atomic.LoadInt32(&thirdStarted) != 0 {
-		t.Error("Third call should not be started because was started during second execution")
-	}
-	if result != 2 {
-		t.Errorf("We should receive result produced by second call, expected: 2, got %d", result)
+	close(unblockSecond)
+	<-secondResult
+	r := <-thirdResult
+	if r.Val != 2 {
+		t.Errorf("We should receive result produced by second call, expected: 2, got %d", r.Val)
 	}
 }
 
