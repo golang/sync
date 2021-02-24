@@ -7,10 +7,9 @@ package semaphore_test
 import (
 	"context"
 	"fmt"
+	"golang.org/x/sync/semaphore"
 	"log"
 	"runtime"
-
-	"golang.org/x/sync/semaphore"
 )
 
 // Example_workerPool demonstrates how to use a semaphore to limit the number of

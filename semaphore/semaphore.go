@@ -26,10 +26,11 @@ func NewWeighted(n int64) *Weighted {
 // Weighted provides a way to bound concurrent access to a resource.
 // The callers can request access with a given weight.
 type Weighted struct {
-	size    int64
-	cur     int64
-	mu      sync.Mutex
-	waiters list.List
+	size              int64
+	cur               int64
+	mu                sync.Mutex
+	waiters           list.List
+	impossibleWaiters list.List
 }
 
 // Acquire acquires the semaphore with a weight of n, blocking until resources
@@ -45,16 +46,16 @@ func (s *Weighted) Acquire(ctx context.Context, n int64) error {
 		return nil
 	}
 
+	var waiterList = &s.waiters
+
 	if n > s.size {
-		// Don't make other Acquire calls block on one that's doomed to fail.
-		s.mu.Unlock()
-		<-ctx.Done()
-		return ctx.Err()
+		// Add currently doomed Acquire call to the Impossible waiters list.
+		waiterList = &s.impossibleWaiters
 	}
 
 	ready := make(chan struct{})
 	w := waiter{n: n, ready: ready}
-	elem := s.waiters.PushBack(w)
+	elem := waiterList.PushBack(w)
 	s.mu.Unlock()
 
 	select {
@@ -67,12 +68,17 @@ func (s *Weighted) Acquire(ctx context.Context, n int64) error {
 			// fix up the queue, just pretend we didn't notice the cancelation.
 			err = nil
 		default:
+			// Release it from Waiters list
 			isFront := s.waiters.Front() == elem
 			s.waiters.Remove(elem)
 			// If we're at the front and there're extra tokens left, notify other waiters.
 			if isFront && s.size > s.cur {
 				s.notifyWaiters()
 			}
+
+			// elem may have been moved to impossibleWaiters in case of a resize, and above statements would have not find the `elem`
+			// delete it from impossible waiters in that case.
+			s.impossibleWaiters.Remove(elem)
 		}
 		s.mu.Unlock()
 		return err
@@ -133,4 +139,77 @@ func (s *Weighted) notifyWaiters() {
 		s.waiters.Remove(next)
 		close(w.ready)
 	}
+}
+
+// Resize semaphore.
+func (s *Weighted) Resize(n int64) {
+	s.mu.Lock()
+	s.size = n
+	if s.size < 0 {
+		s.mu.Unlock()
+		panic("semaphore: bad resize")
+	}
+
+	// Add the now possible waiters to waiters list.
+	element := s.impossibleWaiters.Front()
+	for {
+		if element == nil {
+			break // No more impossible waiters blocked.
+		}
+
+		w := element.Value.(waiter)
+		if s.size < w.n {
+			// Still Impossible. next.
+			element = element.Next()
+			continue
+		}
+
+		s.waiters.PushBack(w)
+		toRemove := element
+		element = element.Next()
+		s.impossibleWaiters.Remove(toRemove)
+
+	}
+
+	// Add the now impossible-waiters to impossible waiters list.
+	element = s.waiters.Front()
+	for {
+		if element == nil {
+			break // No more waiters.
+		}
+
+		w := element.Value.(waiter)
+		if s.size >= w.n {
+			// Still Possible. next.
+			element = element.Next()
+			continue
+		}
+
+		s.impossibleWaiters.PushBack(w)
+		toRemove := element
+		element = element.Next()
+		s.waiters.Remove(toRemove)
+	}
+
+	// Release Possible Waiters
+	for {
+		next := s.waiters.Front()
+		if next == nil {
+			break // No more waiters blocked.
+		}
+
+		w := next.Value.(waiter)
+		if s.size-s.cur < w.n {
+			// Not enough tokens for the element waiter.  We could keep going (to try to
+			// find a waiter with a smaller request), but under load that could cause
+			// starvation for large requests; instead, we leave all remaining waiters
+			// blocked.
+			break
+		}
+
+		s.cur += w.n
+		s.waiters.Remove(next)
+		close(w.ready)
+	}
+	s.mu.Unlock()
 }
