@@ -278,7 +278,7 @@ func TestWeightedResizeUnblockImpossible(t *testing.T) {
 		return signal
 	}
 
-	// Use this syncChan to make sure acquire()  get blocked in sequence (to have internal linked-list in desired state)
+	// Use this syncChan to make sure acquire() get blocked in sequence (to have internal linked-list in desired state)
 	syncChan := make(chan struct{})
 
 	doneAcquire5 := acquire(5, syncChan)

@@ -49,7 +49,7 @@ func (s *Weighted) Acquire(ctx context.Context, n int64) error {
 	var waiterList = &s.waiters
 
 	if n > s.size {
-		// Add doomed Acquire call to the Impossible waiters list.
+		// Add currently doomed Acquire call to the Impossible waiters list.
 		waiterList = &s.impossibleWaiters
 	}
 
@@ -68,12 +68,17 @@ func (s *Weighted) Acquire(ctx context.Context, n int64) error {
 			// fix up the queue, just pretend we didn't notice the cancelation.
 			err = nil
 		default:
+			// Release it from Waiters list
 			isFront := s.waiters.Front() == elem
 			s.waiters.Remove(elem)
 			// If we're at the front and there're extra tokens left, notify other waiters.
 			if isFront && s.size > s.cur {
 				s.notifyWaiters()
 			}
+
+			// elem may have been moved to impossibleWaiters in case of a resize, and above statements would have not find the `elem`
+			// delete it from impossible waiters in that case.
+			s.impossibleWaiters.Remove(elem)
 		}
 		s.mu.Unlock()
 		return err
