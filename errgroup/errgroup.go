@@ -8,6 +8,7 @@ package errgroup
 
 import (
 	"context"
+	"fmt"
 	"sync"
 )
 
@@ -51,16 +52,23 @@ func (g *Group) Wait() error {
 func (g *Group) Go(f func() error) {
 	g.wg.Add(1)
 
+	var err error
 	go func() {
-		defer g.wg.Done()
+		defer func() {
+			if e := recover(); e != nil {
+				err = fmt.Errorf("errgroup: recover from %+v", e)
+			}
 
-		if err := f(); err != nil {
-			g.errOnce.Do(func() {
-				g.err = err
-				if g.cancel != nil {
-					g.cancel()
-				}
-			})
-		}
+			if err != nil {
+				g.errOnce.Do(func() {
+					g.err = err
+					if g.cancel != nil {
+						g.cancel()
+					}
+				})
+			}
+			g.wg.Done()
+		}()
+		err = f()
 	}()
 }
