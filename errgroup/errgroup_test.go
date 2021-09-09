@@ -174,3 +174,17 @@ func TestWithContext(t *testing.T) {
 		}
 	}
 }
+
+func TestGroup_panic(t *testing.T) {
+	g, _ := errgroup.WithContext(context.Background())
+
+	g.Go(func() error {
+		panic("Ops!!!")
+	})
+
+	if err := g.Wait(); err == nil {
+		t.Errorf("after %T.Go(func() error { panic(\"Ops!!!\") })\n"+
+			"g.Wait() = %v; want %v",
+			g, err, "a non-nil error")
+	}
+}
