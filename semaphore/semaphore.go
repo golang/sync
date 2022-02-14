@@ -134,3 +134,31 @@ func (s *Weighted) notifyWaiters() {
 		close(w.ready)
 	}
 }
+
+type Simple chan struct{}
+
+func NewSimple(n int) Simple {
+	return make(chan struct{}, n)
+}
+
+func (s Simple) Acquire(ctx context.Context) error {
+	select {
+	case s <- struct{}{}:
+	case <-ctx.Done():
+	}
+	return ctx.Err()
+}
+
+func (s Simple) TryAcquire() bool {
+	select {
+	case s <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s Simple) Release() {
+	<-s
+}
+
