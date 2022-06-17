@@ -234,7 +234,7 @@ func TestGoLimit(t *testing.T) {
 	g := &errgroup.Group{}
 	g.SetLimit(limit)
 	var active int32
-	for i := 0; i <= 1<<10; i++ {
+	for i := 0; i <= 100; i++ {
 		g.Go(func() error {
 			n := atomic.AddInt32(&active, 1)
 			if n > limit {
@@ -244,6 +244,9 @@ func TestGoLimit(t *testing.T) {
 			atomic.AddInt32(&active, -1)
 			return nil
 		})
+		if i%10 == 0 {
+			g.SetLimit(2)
+		}
 	}
 	if err := g.Wait(); err != nil {
 		t.Fatal(err)

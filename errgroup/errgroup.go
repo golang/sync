@@ -8,11 +8,39 @@ package errgroup
 
 import (
 	"context"
-	"fmt"
 	"sync"
 )
 
 type token struct{}
+
+type taskLimiter struct {
+	sem chan token
+}
+
+func (t taskLimiter) run() {
+	if t.sem == nil {
+		return
+	}
+	t.sem <- token{}
+}
+
+func (t taskLimiter) try() bool {
+	if t.sem == nil {
+		return true
+	}
+	select {
+	case t.sem <- token{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (t taskLimiter) done() {
+	if t.sem != nil {
+		<-t.sem
+	}
+}
 
 // A Group is a collection of goroutines working on subtasks that are part of
 // the same overall task.
@@ -30,10 +58,8 @@ type Group struct {
 	err     error
 }
 
-func (g *Group) done() {
-	if g.sem != nil {
-		<-g.sem
-	}
+func (g *Group) done(t taskLimiter) {
+	t.done()
 	g.wg.Done()
 }
 
@@ -64,13 +90,14 @@ func (g *Group) Wait() error {
 // The first call to return a non-nil error cancels the group; its error will be
 // returned by Wait.
 func (g *Group) Go(f func() error) {
-	if g.sem != nil {
-		g.sem <- token{}
+	limiter := taskLimiter{
+		sem: g.sem,
 	}
+	limiter.run()
 
 	g.wg.Add(1)
 	go func() {
-		defer g.done()
+		defer g.done(limiter)
 
 		if err := f(); err != nil {
 			g.errOnce.Do(func() {
@@ -88,18 +115,13 @@ func (g *Group) Go(f func() error) {
 //
 // The return value reports whether the goroutine was started.
 func (g *Group) TryGo(f func() error) bool {
-	if g.sem != nil {
-		select {
-		case g.sem <- token{}:
-			// Note: this allows barging iff channels in general allow barging.
-		default:
-			return false
-		}
+	limiter := taskLimiter{sem: g.sem}
+	if !limiter.try() {
+		return false
 	}
-
 	g.wg.Add(1)
 	go func() {
-		defer g.done()
+		defer g.done(limiter)
 
 		if err := f(); err != nil {
 			g.errOnce.Do(func() {
@@ -118,15 +140,6 @@ func (g *Group) TryGo(f func() error) bool {
 //
 // Any subsequent call to the Go method will block until it can add an active
 // goroutine without exceeding the configured limit.
-//
-// The limit must not be modified while any goroutines in the group are active.
 func (g *Group) SetLimit(n int) {
-	if n < 0 {
-		g.sem = nil
-		return
-	}
-	if len(g.sem) != 0 {
-		panic(fmt.Errorf("errgroup: modify limit while %v goroutines in the group are still active", len(g.sem)))
-	}
 	g.sem = make(chan token, n)
 }
