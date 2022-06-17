@@ -140,6 +140,11 @@ func (g *Group) TryGo(f func() error) bool {
 //
 // Any subsequent call to the Go method will block until it can add an active
 // goroutine without exceeding the configured limit.
+// n <= 0 is not limit
 func (g *Group) SetLimit(n int) {
+	if n < 1 {
+		g.sem = nil
+		return
+	}
 	g.sem = make(chan token, n)
 }
