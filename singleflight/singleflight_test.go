@@ -318,3 +318,8 @@ func TestPanicDoSharedByDoChan(t *testing.T) {
 		t.Errorf("Test subprocess failed, but the crash isn't caused by panicking in Do")
 	}
 }
+
+func TestForgetEarly(t *testing.T) {
+	var g Group
+	g.Forget("key") // calling Forget before Do/DoChan should not panic
+}

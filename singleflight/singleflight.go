@@ -204,6 +204,9 @@ func (g *Group) doCall(c *call, key string, fn func() (interface{}, error)) {
 // an earlier call to complete.
 func (g *Group) Forget(key string) {
 	g.mu.Lock()
+	if g.m == nil {
+		g.m = make(map[string]*call)
+	}
 	if c, ok := g.m[key]; ok {
 		c.forgotten = true
 	}
