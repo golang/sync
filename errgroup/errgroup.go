@@ -61,8 +61,11 @@ func (g *Group) Wait() error {
 // It blocks until the new goroutine can be added without the number of
 // active goroutines in the group exceeding the configured limit.
 //
-// The first call to return a non-nil error cancels the group; its error will be
-// returned by Wait.
+// The first call to return a non-nil error cancels the derived Context; its
+// error will be returned by Wait.
+//
+// Already running goroutines and subsequent calls will be executed
+// even if the derived Context has been cancelled.
 func (g *Group) Go(f func() error) {
 	if g.sem != nil {
 		g.sem <- token{}
