@@ -144,9 +144,9 @@ func (g *Group) doCall(c *call, key string, fn func() (interface{}, error)) {
 			c.err = errGoexit
 		}
 
-		c.wg.Done()
 		g.mu.Lock()
 		defer g.mu.Unlock()
+		c.wg.Done()
 		if g.m[key] == c {
 			delete(g.m, key)
 		}
