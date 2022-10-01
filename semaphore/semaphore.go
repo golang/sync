@@ -94,6 +94,24 @@ func (s *Weighted) TryAcquire(n int64) bool {
 	return success
 }
 
+// TryAcquireAll acquires all free weight from the semaphore without blocking.
+// Returns the weight acquired. Returns 0 and leaves the semaphore unchanged if
+// no weight was available.
+func (s *Weighted) TryAcquireAll() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// When somebody waits for a token there are obviously not enough tokens
+	// for waiters already waiting. Consequently, there are no free tokens.
+	if s.waiters.Len() > 0 {
+		return 0
+	}
+
+	free := s.size - s.cur
+	s.cur = s.size
+	return free
+}
+
 // Release releases the semaphore with a weight of n.
 func (s *Weighted) Release(n int64) {
 	s.mu.Lock()
