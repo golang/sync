@@ -223,11 +223,24 @@ func TestGoexitDo(t *testing.T) {
 	}
 }
 
-func TestPanicDoChan(t *testing.T) {
-	if runtime.GOOS == "js" {
-		t.Skipf("js does not support exec")
+func executable(t testing.TB) string {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Skipf("skipping: test executable not found")
 	}
 
+	// Control case: check whether exec.Command works at all.
+	// (For example, it might fail with a permission error on iOS.)
+	cmd := exec.Command(exe, "-test.list=^$")
+	cmd.Env = []string{}
+	if err := cmd.Run(); err != nil {
+		t.Skipf("skipping: exec appears not to work on %s: %v", runtime.GOOS, err)
+	}
+
+	return exe
+}
+
+func TestPanicDoChan(t *testing.T) {
 	if os.Getenv("TEST_PANIC_DOCHAN") != "" {
 		defer func() {
 			recover()
@@ -243,7 +256,7 @@ func TestPanicDoChan(t *testing.T) {
 
 	t.Parallel()
 
-	cmd := exec.Command(os.Args[0], "-test.run="+t.Name(), "-test.v")
+	cmd := exec.Command(executable(t), "-test.run="+t.Name(), "-test.v")
 	cmd.Env = append(os.Environ(), "TEST_PANIC_DOCHAN=1")
 	out := new(bytes.Buffer)
 	cmd.Stdout = out
@@ -266,10 +279,6 @@ func TestPanicDoChan(t *testing.T) {
 }
 
 func TestPanicDoSharedByDoChan(t *testing.T) {
-	if runtime.GOOS == "js" {
-		t.Skipf("js does not support exec")
-	}
-
 	if os.Getenv("TEST_PANIC_DOCHAN") != "" {
 		blocked := make(chan struct{})
 		unblock := make(chan struct{})
@@ -297,7 +306,7 @@ func TestPanicDoSharedByDoChan(t *testing.T) {
 
 	t.Parallel()
 
-	cmd := exec.Command(os.Args[0], "-test.run="+t.Name(), "-test.v")
+	cmd := exec.Command(executable(t), "-test.run="+t.Name(), "-test.v")
 	cmd.Env = append(os.Environ(), "TEST_PANIC_DOCHAN=1")
 	out := new(bytes.Buffer)
 	cmd.Stdout = out
