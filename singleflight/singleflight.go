@@ -45,7 +45,8 @@ func newPanicError(v interface{}) error {
 
 // call is an in-flight or completed singleflight.Do call
 type call struct {
-	wg sync.WaitGroup
+	onceWg   sync.WaitGroup
+	othersWg sync.WaitGroup
 
 	// These fields are written once before the WaitGroup is done
 	// and are only read after the WaitGroup is done.
@@ -87,7 +88,7 @@ func (g *Group) Do(key string, fn func() (interface{}, error)) (v interface{}, e
 	if c, ok := g.m[key]; ok {
 		c.dups++
 		g.mu.Unlock()
-		c.wg.Wait()
+		c.onceWg.Wait()
 
 		if e, ok := c.err.(*panicError); ok {
 			panic(e)
@@ -97,7 +98,7 @@ func (g *Group) Do(key string, fn func() (interface{}, error)) (v interface{}, e
 		return c.val, c.err, true
 	}
 	c := new(call)
-	c.wg.Add(1)
+	c.onceWg.Add(1)
 	g.m[key] = c
 	g.mu.Unlock()
 
@@ -122,13 +123,50 @@ func (g *Group) DoChan(key string, fn func() (interface{}, error)) <-chan Result
 		return ch
 	}
 	c := &call{chans: []chan<- Result{ch}}
-	c.wg.Add(1)
+	c.onceWg.Add(1)
 	g.m[key] = c
 	g.mu.Unlock()
 
 	go g.doCall(c, key, fn)
 
 	return ch
+}
+
+// Inspired by https://github.com/golang/sync/pull/9#issuecomment-572705800
+// `singleFn` is executed only once per key and `othersFn` is executed once per additional caller.
+// All callers waiting on DoShared will wait for ALL `othersFn` to finish.
+func (g *Group) DoShared(key string, onceFn func() (interface{}, error), othersFn func(interface{}, error)) (v interface{}, err error) {
+	g.mu.Lock()
+	if g.m == nil {
+		g.m = make(map[string]*call)
+	}
+	if c, ok := g.m[key]; ok {
+		c.dups++
+		c.othersWg.Add(1)
+		g.mu.Unlock()
+		c.onceWg.Wait()
+		func() {
+			// TODO: deal with panics the same way as in doCall?
+			defer c.othersWg.Done()
+			othersFn(c.val, c.err)
+		}()
+		c.othersWg.Wait()
+
+		if e, ok := c.err.(*panicError); ok {
+			panic(e)
+		} else if c.err == errGoexit {
+			runtime.Goexit()
+		}
+		return c.val, c.err
+	}
+	c := new(call)
+	c.onceWg.Add(1)
+	g.m[key] = c
+	g.mu.Unlock()
+
+	g.doCall(c, key, onceFn)
+	c.othersWg.Wait()
+	return c.val, c.err
 }
 
 // doCall handles the single call for a key.
@@ -146,7 +184,7 @@ func (g *Group) doCall(c *call, key string, fn func() (interface{}, error)) {
 
 		g.mu.Lock()
 		defer g.mu.Unlock()
-		c.wg.Done()
+		c.onceWg.Done()
 		if g.m[key] == c {
 			delete(g.m, key)
 		}
