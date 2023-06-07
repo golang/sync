@@ -126,7 +126,7 @@ func (g *Group) SetLimit(n int) {
 		return
 	}
 	if len(g.sem) != 0 {
-		panic(fmt.Errorf("errgroup: modify limit while %v goroutines in the group are still active", len(g.sem)))
+		panic(fmt.Errorf("errgroup: modify limit while %d goroutines in the group are still active", len(g.sem)))
 	}
 	g.sem = make(chan token, n)
 }
