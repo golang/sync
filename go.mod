@@ -1,3 +1,3 @@
 module golang.org/x/sync
 
-go 1.17
+go 1.18
