@@ -200,3 +200,38 @@ func TestAllocCancelDoesntStarve(t *testing.T) {
 	}
 	sem.Release(1)
 }
+
+func TestWeightedAcquireCanceled(t *testing.T) {
+	// https://go.dev/issue/63615
+	sem := semaphore.NewWeighted(2)
+	ctx, cancel := context.WithCancel(context.Background())
+	sem.Acquire(context.Background(), 1)
+	ch := make(chan struct{})
+	go func() {
+		// Synchronize with the Acquire(2) below.
+		for sem.TryAcquire(1) {
+			sem.Release(1)
+		}
+		// Now cancel ctx, and then release the token.
+		cancel()
+		sem.Release(1)
+		close(ch)
+	}()
+	// Since the context closing happens before enough tokens become available,
+	// this Acquire must fail.
+	if err := sem.Acquire(ctx, 2); err != context.Canceled {
+		t.Errorf("Acquire with canceled context returned wrong error: want context.Canceled, got %v", err)
+	}
+	// There must always be two tokens in the semaphore after the other
+	// goroutine releases the one we held at the start.
+	<-ch
+	if !sem.TryAcquire(2) {
+		t.Fatal("TryAcquire after canceled Acquire failed")
+	}
+	// Additionally verify that we don't acquire with a done context even when
+	// we wouldn't need to block to do so.
+	sem.Release(2)
+	if err := sem.Acquire(ctx, 1); err != context.Canceled {
+		t.Errorf("Acquire with canceled context returned wrong error: want context.Canceled, got %v", err)
+	}
+}
