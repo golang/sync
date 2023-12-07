@@ -18,6 +18,7 @@ type weighted interface {
 	Acquire(context.Context, int64) error
 	TryAcquire(int64) bool
 	Release(int64)
+	Resize(int64)
 }
 
 // semChan implements Weighted using a channel for
@@ -50,6 +51,10 @@ func (s semChan) Release(n int64) {
 	for i := int64(0); i < n; i++ {
 		<-s
 	}
+}
+
+func (s semChan) Resize(n int64) {
+	panic("not implemented mock method")
 }
 
 // acquireN calls Acquire(size) on sem N times and then calls Release(size) N times.
