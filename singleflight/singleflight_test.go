@@ -411,7 +411,7 @@ func ExampleGroup() {
 	// Results are shared by functions executed with duplicate keys.
 	fmt.Println("Shared:", res2.Shared)
 	// Only the first function is executed: it is registered and started with "key",
-	// and doesn't complete before the second funtion is registered with a duplicate key.
+	// and doesn't complete before the second function is registered with a duplicate key.
 	fmt.Println("Equal results:", res1.Val.(string) == res2.Val.(string))
 	fmt.Println("Result:", res1.Val)
 
