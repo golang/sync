@@ -66,13 +66,21 @@ func (g *Group) Wait() error {
 //
 // The first call to return a non-nil error cancels the group's context, if the
 // group was created by calling WithContext. The error will be returned by Wait.
-func (g *Group) Go(f func() error) {
+func (g *Group) Go(f func() error, ph ...func()) {
 	if g.sem != nil {
 		g.sem <- token{}
 	}
 
 	g.wg.Add(1)
 	go func() {
+		defer func() {
+			if len(ph) > 0 && ph[0] != nil {
+				if r := recover(); r != nil {
+					ph[0]()
+				}
+			}
+		}()
+
 		defer g.done()
 
 		if err := f(); err != nil {
@@ -90,7 +98,7 @@ func (g *Group) Go(f func() error) {
 // active goroutines in the group is currently below the configured limit.
 //
 // The return value reports whether the goroutine was started.
-func (g *Group) TryGo(f func() error) bool {
+func (g *Group) TryGo(f func() error, ph ...func()) bool {
 	if g.sem != nil {
 		select {
 		case g.sem <- token{}:
@@ -102,6 +110,14 @@ func (g *Group) TryGo(f func() error) bool {
 
 	g.wg.Add(1)
 	go func() {
+		defer func() {
+			if len(ph) > 0 && ph[0] != nil {
+				if r := recover(); r != nil {
+					ph[0]()
+				}
+			}
+		}()
+
 		defer g.done()
 
 		if err := f(); err != nil {
