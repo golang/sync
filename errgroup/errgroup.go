@@ -185,8 +185,9 @@ type PanicError struct {
 }
 
 func (p PanicError) Error() string {
-	// A Go Error method conventionally does not include a stack dump, so omit it
-	// here. (Callers who care can extract it from the Stack field.)
+	if len(p.Stack) > 0 {
+		return fmt.Sprintf("recovered from errgroup.Group: %v\n%s", p.Recovered, p.Stack)
+	}
 	return fmt.Sprintf("recovered from errgroup.Group: %v", p.Recovered)
 }
 
