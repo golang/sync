@@ -76,10 +76,8 @@ func (g *Group) Wait() error {
 }
 
 // Go calls the given function in a new goroutine.
-// The first call to Go must happen before a Wait.
-// It blocks until the new goroutine can be added without the number of
-// active goroutines in the group exceeding the configured limit.
 //
+// The first call to Go must happen before a Wait.
 // It blocks until the new goroutine can be added without the number of
 // goroutines in the group exceeding the configured limit.
 //
