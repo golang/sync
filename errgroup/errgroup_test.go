@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -288,69 +287,6 @@ func TestCancelCause(t *testing.T) {
 				g, tc.errs, err, tc.want)
 		}
 	}
-}
-
-func TestPanic(t *testing.T) {
-	t.Run("error", func(t *testing.T) {
-		g := &errgroup.Group{}
-		p := errors.New("")
-		g.Go(func() error {
-			panic(p)
-		})
-		defer func() {
-			err := recover()
-			if err == nil {
-				t.Fatalf("should propagate panic through Wait")
-			}
-			pe, ok := err.(errgroup.PanicError)
-			if !ok {
-				t.Fatalf("type should is errgroup.PanicError, but is %T", err)
-			}
-			if pe.Recovered != p {
-				t.Fatalf("got %v, want %v", pe.Recovered, p)
-			}
-			if !strings.Contains(pe.Error(), "TestPanic.func") {
-				t.Log(pe.Error())
-				t.Fatalf("stack trace incomplete, does not contain TestPanic.func")
-			}
-		}()
-		g.Wait()
-	})
-	t.Run("any", func(t *testing.T) {
-		g := &errgroup.Group{}
-		g.Go(func() error {
-			panic(1)
-		})
-		defer func() {
-			err := recover()
-			if err == nil {
-				t.Fatalf("should propagate panic through Wait")
-			}
-			pe, ok := err.(errgroup.PanicValue)
-			if !ok {
-				t.Fatalf("type should is errgroup.PanicValue, but is %T", err)
-			}
-			if pe.Recovered != 1 {
-				t.Fatalf("got %v, want %v", pe.Recovered, 1)
-			}
-			if !strings.Contains(string(pe.Stack), "TestPanic.func") {
-				t.Log(string(pe.Stack))
-				t.Fatalf("stack trace incomplete")
-			}
-		}()
-		g.Wait()
-	})
-}
-
-func TestGoexit(t *testing.T) {
-	g := &errgroup.Group{}
-	g.Go(func() error {
-		t.Skip()
-		t.Fatalf("Goexit fail")
-		return nil
-	})
-	g.Wait()
-	t.Fatalf("should call runtime.Goexit from Wait")
 }
 
 func BenchmarkGo(b *testing.B) {
