@@ -19,14 +19,10 @@ import (
 	"time"
 )
 
-type errValue struct{}
-
-func (err *errValue) Error() string {
-	return "error value"
-}
-
 func TestPanicErrorUnwrap(t *testing.T) {
 	t.Parallel()
+
+	errValue := errors.New("error value")
 
 	testCases := []struct {
 		name             string
@@ -35,19 +31,17 @@ func TestPanicErrorUnwrap(t *testing.T) {
 	}{
 		{
 			name:             "panicError wraps non-error type",
-			panicValue:       &panicError{value: "string value"},
+			panicValue:       "string value",
 			wrappedErrorType: false,
 		},
 		{
 			name:             "panicError wraps error type",
-			panicValue:       &panicError{value: new(errValue)},
-			wrappedErrorType: false,
+			panicValue:       errValue,
+			wrappedErrorType: true,
 		},
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -75,8 +69,8 @@ func TestPanicErrorUnwrap(t *testing.T) {
 				t.Fatalf("recovered non-error type: %T", recovered)
 			}
 
-			if !errors.Is(err, new(errValue)) && tc.wrappedErrorType {
-				t.Errorf("unexpected wrapped error type %T; want %T", err, new(errValue))
+			if !errors.Is(err, errValue) && tc.wrappedErrorType {
+				t.Errorf("unexpected wrapped error \"%v\"; want \"%v\"", err, errValue)
 			}
 		})
 	}
