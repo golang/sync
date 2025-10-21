@@ -140,12 +140,12 @@ func (g *Group) TryGo(f func() error) bool {
 //
 // The limit must not be modified while any goroutines in the group are active.
 func (g *Group) SetLimit(n int) {
+	if len(g.sem) != 0 {
+		panic(fmt.Errorf("errgroup: modify limit while %v goroutines in the group are still active", len(g.sem)))
+	}
 	if n < 0 {
 		g.sem = nil
 		return
-	}
-	if len(g.sem) != 0 {
-		panic(fmt.Errorf("errgroup: modify limit while %v goroutines in the group are still active", len(g.sem)))
 	}
 	g.sem = make(chan token, n)
 }
