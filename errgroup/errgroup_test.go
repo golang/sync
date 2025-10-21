@@ -222,7 +222,7 @@ func TestTryGo(t *testing.T) {
 	g.SetLimit(0)
 	for i := 0; i < 1<<10; i++ {
 		if g.TryGo(fn) {
-			t.Fatalf("TryGo should fail but got succeded.")
+			t.Fatalf("TryGo should fail but got succeeded.")
 		}
 	}
 	g.Wait()
