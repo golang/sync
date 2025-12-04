@@ -154,12 +154,11 @@ func (g *Group) doCall(c *call, key string, fn func() (interface{}, error)) {
 		}
 
 		g.mu.Lock()
-		defer g.mu.Unlock()
 		c.wg.Done()
 		if g.m[key] == c {
 			delete(g.m, key)
 		}
-
+		g.mu.Unlock()
 		if e, ok := c.err.(*panicError); ok {
 			// In order to prevent the waiting channels from being blocked forever,
 			// needs to ensure that this panic cannot be recovered.
