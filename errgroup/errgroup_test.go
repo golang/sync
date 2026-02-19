@@ -34,7 +34,7 @@ func fakeSearch(kind string) Search {
 
 // JustErrors illustrates the use of a Group in place of a sync.WaitGroup to
 // simplify goroutine counting and error handling. This example is derived from
-// the sync.WaitGroup example at https://golang.org/pkg/sync/#example_WaitGroup.
+// the sync.WaitGroup example at https://golang.org/pkg/sync/#example-WaitGroup.
 func ExampleGroup_justErrors() {
 	g := new(errgroup.Group)
 	var urls = []string{
