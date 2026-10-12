@@ -19,7 +19,7 @@ type bench struct {
 }
 
 func benchMap(b *testing.B, bench bench) {
-	for _, m := range [...]mapInterface{&DeepCopyMap{}, &RWMutexMap{}, &syncmap.Map{}} {
+	for _, m := range [...]mapInterface{&CopyMap{}, &RWMutexMap{}, &syncmap.Map{}} {
 		b.Run(fmt.Sprintf("%T", m), func(b *testing.B) {
 			m = reflect.New(reflect.TypeOf(m).Elem()).Interface().(mapInterface)
 			if bench.setup != nil {
@@ -86,7 +86,7 @@ func BenchmarkLoadOrStoreBalanced(b *testing.B) {
 
 	benchMap(b, bench{
 		setup: func(b *testing.B, m mapInterface) {
-			if _, ok := m.(*DeepCopyMap); ok {
+			if _, ok := m.(*CopyMap); ok {
 				b.Skip("DeepCopyMap has quadratic running time.")
 			}
 			for i := 0; i < hits; i++ {
@@ -118,7 +118,7 @@ func BenchmarkLoadOrStoreBalanced(b *testing.B) {
 func BenchmarkLoadOrStoreUnique(b *testing.B) {
 	benchMap(b, bench{
 		setup: func(b *testing.B, m mapInterface) {
-			if _, ok := m.(*DeepCopyMap); ok {
+			if _, ok := m.(*CopyMap); ok {
 				b.Skip("DeepCopyMap has quadratic running time.")
 			}
 		},

@@ -95,7 +95,7 @@ func applyRWMutexMap(calls []mapCall) ([]mapResult, map[any]any) {
 }
 
 func applyDeepCopyMap(calls []mapCall) ([]mapResult, map[any]any) {
-	return applyCalls(new(DeepCopyMap), calls)
+	return applyCalls(new(CopyMap), calls)
 }
 
 func TestMapMatchesRWMutex(t *testing.T) {

@@ -81,21 +81,21 @@ func (m *RWMutexMap) Range(f func(key, value any) (shouldContinue bool)) {
 	}
 }
 
-// DeepCopyMap is an implementation of mapInterface using a Mutex and
-// atomic.Value. It makes deep copies of the map on every write to avoid
-// acquiring the Mutex in Load.
-type DeepCopyMap struct {
+// CopyMap is an implementation of mapInterface using a Mutex and atomic.Value.
+// Each update operation makes a copy of the map (a functional update) so that
+// no published map is mutated. This avoids acquiring the Mutex in Load and Range.
+type CopyMap struct {
 	mu    sync.Mutex
 	clean atomic.Value
 }
 
-func (m *DeepCopyMap) Load(key any) (value any, ok bool) {
+func (m *CopyMap) Load(key any) (value any, ok bool) {
 	clean, _ := m.clean.Load().(map[any]any)
 	value, ok = clean[key]
 	return value, ok
 }
 
-func (m *DeepCopyMap) Store(key, value any) {
+func (m *CopyMap) Store(key, value any) {
 	m.mu.Lock()
 	dirty := m.dirty()
 	dirty[key] = value
@@ -103,7 +103,7 @@ func (m *DeepCopyMap) Store(key, value any) {
 	m.mu.Unlock()
 }
 
-func (m *DeepCopyMap) LoadOrStore(key, value any) (actual any, loaded bool) {
+func (m *CopyMap) LoadOrStore(key, value any) (actual any, loaded bool) {
 	clean, _ := m.clean.Load().(map[any]any)
 	actual, loaded = clean[key]
 	if loaded {
@@ -124,7 +124,7 @@ func (m *DeepCopyMap) LoadOrStore(key, value any) (actual any, loaded bool) {
 	return actual, loaded
 }
 
-func (m *DeepCopyMap) Delete(key any) {
+func (m *CopyMap) Delete(key any) {
 	m.mu.Lock()
 	dirty := m.dirty()
 	delete(dirty, key)
@@ -132,7 +132,7 @@ func (m *DeepCopyMap) Delete(key any) {
 	m.mu.Unlock()
 }
 
-func (m *DeepCopyMap) Range(f func(key, value any) (shouldContinue bool)) {
+func (m *CopyMap) Range(f func(key, value any) (shouldContinue bool)) {
 	clean, _ := m.clean.Load().(map[any]any)
 	for k, v := range clean {
 		if !f(k, v) {
@@ -141,7 +141,7 @@ func (m *DeepCopyMap) Range(f func(key, value any) (shouldContinue bool)) {
 	}
 }
 
-func (m *DeepCopyMap) dirty() map[any]any {
+func (m *CopyMap) dirty() map[any]any {
 	clean, _ := m.clean.Load().(map[any]any)
 	dirty := make(map[any]any, len(clean)+1)
 	for k, v := range clean {
